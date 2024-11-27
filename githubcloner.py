@@ -49,16 +49,18 @@ class getReposURLs:
             (excluded_repo in url for excluded_repo in self.excluded_repos_list)
         )
 
-    def append_response(self, URLs, resp, key, exclude_forked=False):
+    def append_response(self, URLs, resp, key, exclude_forked=False, owner=None):
         """Append the urls from response from a given criteria"""
         for i, _ in enumerate(resp):
             if exclude_forked and resp[i]["fork"]:
+                continue
+            if owner is not None and resp[i]["owner"]["login"] != owner:
                 continue
             resp_i_key = resp[i][key]
             if self.filter_excluded_repos(resp_i_key):
                 URLs.append(resp_i_key)
 
-    def UserGists(self, user, username=None, token=None):
+    def UserGists(self, user, username=None, token=None, owner_only=False):
         """
         Returns a list of GIT URLs for accessible gists.
         Input:-
@@ -90,14 +92,16 @@ class getReposURLs:
                 ).text
             resp = json.loads(resp)
 
+            owner = username if owner_only else None
+
             if self.checkResponse(resp) != 0:
                 return []
 
-            self.append_response(URLs, resp, "git_pull_url")
+            self.append_response(URLs, resp, "git_pull_url", owner)
             current_page += 1
         return URLs
 
-    def AuthenticatedGists(self, username, token):
+    def AuthenticatedGists(self, username, token, owner_only=False):
         """
         Returns a list of gists of an authenticated user.
         Input:-
@@ -116,13 +120,20 @@ class getReposURLs:
                 API, headers=self.headers, timeout=self.timeout, auth=(username, token)
             ).text
             resp = json.loads(resp)
-            self.append_response(URLs, resp, "git_pull_url")
+            owner = username if owner_only else None
+            self.append_response(URLs, resp, "git_pull_url", owner)
             current_page += 1
 
         return URLs
 
     def fromUser(
-        self, user, username=None, token=None, include_gists=False, exclude_forked=False
+        self,
+        user,
+        username=None,
+        token=None,
+        include_gists=False,
+        exclude_forked=False,
+        owner_only=False,
     ):
         """
         Retrieves a list of repositories for a Github user.
@@ -159,14 +170,23 @@ class getReposURLs:
             if self.checkResponse(resp) != 0:
                 return []
 
-            self.append_response(URLs, resp, "git_url", exclude_forked)
+            owner = username if owner_only else None
+
+            self.append_response(URLs, resp, "git_url", exclude_forked, owner=owner)
 
             if include_gists is True:
                 URLs.extend(self.UserGists(user, username=username, token=token))
             current_page += 1
         return URLs
 
-    def fromOrg(self, org_name, username=None, token=None, exclude_forked=False):
+    def fromOrg(
+        self,
+        org_name,
+        username=None,
+        token=None,
+        exclude_forked=False,
+        owner_only=False,
+    ):
         """
         Retrieves a list of repositories for a Github organization.
         Input:-
@@ -201,7 +221,9 @@ class getReposURLs:
             if self.checkResponse(resp) != 0:
                 return []
 
-            self.append_response(URLs, resp, "git_url", exclude_forked)
+            owner = username if owner_only else None
+
+            self.append_response(URLs, resp, "git_url", exclude_forked, owner)
             current_page += 1
         return URLs
 
@@ -304,7 +326,7 @@ class getReposURLs:
 
         return 0
 
-    def fromAuthenticatedUser(self, username, token, exclude_forked):
+    def fromAuthenticatedUser(self, username, token, exclude_forked, owner_only=False):
         """
         Retrieves a list of Github repositories than an authenticated user
         has access to.
@@ -326,8 +348,9 @@ class getReposURLs:
                 API, headers=self.headers, timeout=self.timeout, auth=(username, token)
             ).text
             resp = json.loads(resp)
+            owner = username if owner_only else None
 
-            self.append_response(URLs, resp, "git_url", exclude_forked)
+            self.append_response(URLs, resp, "git_url", exclude_forked, owner=owner)
             current_page += 1
         return URLs
 
@@ -546,6 +569,12 @@ def parse_args() -> argparse.Namespace:
         help="Exclude forked repositories",
         action="store_true",
     )
+    parser.add_argument(
+        "--owner_only",
+        dest="owner_only",
+        help="Exclude repositories you don't own",
+        action="store_true",
+    )
     return parser.parse_args()
 
 
@@ -573,6 +602,7 @@ def main():
     prefix_mode = args.prefix_mode
     api_prefix = args.api_prefix
     exclude_repos = args.exclude_repos if args.exclude_repos else None
+    owner_only = args.owner_only if args.owner_only else None
 
     if threads_limit > 10:
         print(
@@ -647,7 +677,7 @@ def main():
     if include_authenticated_repos is True:
         URLs.extend(
             getReposURLs(api_prefix, exclude_repos).fromAuthenticatedUser(
-                username, token, args.exclude_forked
+                username, token, args.exclude_forked, owner_only
             )
         )
         if include_gists is True:
@@ -667,6 +697,7 @@ def main():
                     token=token,
                     include_gists=include_gists,
                     exclude_forked=args.exclude_forked,
+                    owner_only=owner_only,
                 )
             )
 
