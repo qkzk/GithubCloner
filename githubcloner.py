@@ -21,18 +21,18 @@ class ConfigError(Exception):
 
 @dataclass
 class Config:
-    users: str | None
-    organizations: str | None
+    users: str
+    organizations: str
     include_organization_members: bool
     output_path: str
     threads_limit: int
-    authentication: str | None
+    authentication: str
     include_authenticated_repos: bool
     include_gists: bool
     echo_urls: bool
     prefix_mode: str
     api_prefix: str
-    exclude_repos: str | None
+    exclude_repos: str
     owner_only: bool
     exclude_forked: bool
 
@@ -269,7 +269,7 @@ class Driver:
 
 
 class GetReposURLs:
-    def __init__(self, api_prefix: str, exclude_repos: str | None = None):
+    def __init__(self, api_prefix: str, exclude_repos: str = None):
         """
         Initialize the class with the API prefix and optional excluded repositories.
         """
@@ -288,7 +288,7 @@ class GetReposURLs:
         return not any(excluded in url for excluded in self.excluded_repos_list)
 
     def _fetch_paginated_data(
-        self, api_url: str, username: str | None = None, token: str | None = None
+        self, api_url: str, username: str = None, token: str = None
     ) -> list[dict]:
         """
         Fetches paginated data from a GitHub API endpoint.
@@ -307,7 +307,7 @@ class GetReposURLs:
         return data
 
     def _make_request(
-        self, url: str, username: str | None = None, token: str | None = None
+        self, url: str, username: str = None, token: str = None
     ) -> list[dict]:
         """
         Makes an API request and returns the JSON response.
@@ -324,7 +324,7 @@ class GetReposURLs:
         data: list[dict],
         key: str,
         exclude_forked: bool = False,
-        owner: str | None = None,
+        owner: str = None,
     ):
         """
         Appends URLs to the list based on filtering criteria.
@@ -353,8 +353,8 @@ class GetReposURLs:
     def from_user(
         self,
         user: str,
-        username: str | None = None,
-        token: str | None = None,
+        username: str = None,
+        token: str = None,
         include_gists: bool = False,
         exclude_forked: bool = False,
         owner_only: bool = False,
@@ -376,8 +376,8 @@ class GetReposURLs:
     def from_org(
         self,
         org_name: str,
-        username: str | None = None,
-        token: str | None = None,
+        username: str = None,
+        token: str = None,
         exclude_forked: bool = False,
         owner_only: bool = False,
     ) -> list[str]:
@@ -395,8 +395,8 @@ class GetReposURLs:
     def user_gists(
         self,
         user: str,
-        username: str | None = None,
-        token: str | None = None,
+        username: str = None,
+        token: str = None,
         owner_only: bool = False,
     ) -> list[str]:
         """
@@ -431,8 +431,8 @@ class GetReposURLs:
     def from_org_include_users(
         self,
         org_name: str,
-        username: str | None = None,
-        token: str | None = None,
+        username: str = None,
+        token: str = None,
         include_gists: bool = False,
         exclude_forked: bool = False,
     ) -> list[str]:
@@ -470,8 +470,8 @@ class Cloner:
         urls: list[str],
         cloning_path: str,
         threads_limit: int = 5,
-        username: str | None = None,
-        token: str | None = None,
+        username: str = None,
+        token: str = None,
         prefix_mode: str = "underscore",
     ):
         self.urls = urls
@@ -591,7 +591,7 @@ class Cloner:
         )
 
 
-def parse_git_url(url, username: str | None = None, token: str | None = None) -> str:
+def parse_git_url(url, username: str = None, token: str = None) -> str:
     """
     This function parses the GIT URL.
     """
