@@ -8,7 +8,6 @@ import time
 import argparse
 
 from dataclasses import dataclass
-from sys import exit
 
 import git
 import requests
@@ -494,106 +493,39 @@ def clone_bulk_repos(
 
 def parse_args() -> argparse.Namespace:
     """
-    Parses the user inputed arguments from stdin and returns a NameSpace.
+    Parses the user-inputted arguments from stdin and returns a Namespace.
     """
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "-u",
-        "--user",
-        dest="users",
-        help="Github user (comma-separated input for multiple Github users).",
-        action="store",
-    )
-    parser.add_argument(
-        "-org",
-        "--org",
-        dest="organizations",
-        help="Github organization"
-        + "(comma-separated input for multiple Github organizations).",
-        action="store",
-    )
-    parser.add_argument(
-        "--include-org-members",
-        dest="include_organization_members",
-        help="Include the members of a Github organization.",
-        action="store_true",
-    )
-    parser.add_argument(
-        "-o",
-        "--output-path",
-        dest="output_path",
-        help="The directory to use in cloning Git repositories.",
-        action="store",
-    )
-    parser.add_argument(
-        "-t",
-        "--threads",
-        dest="threads_limit",
-        help="Threads used in cloning repositories (Default: 5).",
-        action="store",
-        default=5,
-    )
-    parser.add_argument(
-        "-a",
-        "--authentication",
-        dest="authentication",
-        help="Github authentication credentials (username:token).",
-        action="store",
-    )
-    parser.add_argument(
-        "--include-authenticated-repos",
-        dest="include_authenticated_repos",
-        help="Include repositories that the authenticated Github"
-        + " account have access to.",
-        action="store_true",
-    )
-    parser.add_argument(
-        "--include-gists",
-        dest="include_gists",
-        help="Include gists.",
-        action="store_true",
-    )
-    parser.add_argument(
-        "--echo-urls",
-        dest="echo_urls",
-        help="Print gathered URLs only and then exit.",
-        action="store_true",
-    )
-    parser.add_argument(
-        "--prefix-mode",
-        dest="prefix_mode",
-        help="Sets the prefix mode for the repo directory. "
-        "underscore: /Netflix_repo-name, directory:"
-        " /Netflix/repo-name, none: /repo-name",
-        action="store",
-        default="underscore",
-    )
-    parser.add_argument(
-        "--api-prefix",
-        dest="api_prefix",
-        help="Github Enterprise domain to prefix to API calls",
-        action="store",
-        default="https://api.github.com",
-    )
-    parser.add_argument(
-        "--exclude_repos",
-        dest="exclude_repos",
-        help="Exclude a list of comma separated repos: 'repo1,repo2,...'",
-        action="store",
-    )
-    parser.add_argument(
-        "--exclude_forked",
-        dest="exclude_forked",
-        help="Exclude forked repositories",
-        action="store_true",
-    )
-    parser.add_argument(
-        "--owner_only",
-        dest="owner_only",
-        help="Exclude repositories you don't own",
-        action="store_true",
-    )
+
+    # fmt: off
+    arguments = [
+        {"flags": ["-u", "--user"], "dest": "users", "help": "GitHub user (comma-separated for multiple users)."},
+        {"flags": ["-org", "--org"], "dest": "organizations", "help": "GitHub organization (comma-separated for multiple organizations)."},
+        {"flags": ["--include-org-members"], "dest": "include_organization_members", "help": "Include the members of a GitHub organization.", "action": "store_true"},
+        {"flags": ["-o", "--output-path"], "dest": "output_path", "help": "Directory to clone Git repositories."},
+        {"flags": ["-t", "--threads"], "dest": "threads_limit", "help": "Threads used in cloning repositories (Default: 5).", "default": 5},
+        {"flags": ["-a", "--authentication"], "dest": "authentication", "help": "GitHub authentication credentials (username:token)."},
+        {"flags": ["--include-authenticated-repos"], "dest": "include_authenticated_repos", "help": "Include repositories the authenticated GitHub account has access to.", "action": "store_true"},
+        {"flags": ["--include-gists"], "dest": "include_gists", "help": "Include gists.", "action": "store_true"},
+        {"flags": ["--echo-urls"], "dest": "echo_urls", "help": "Print gathered URLs only and then exit.", "action": "store_true"},
+        {"flags": ["--prefix-mode"], "dest": "prefix_mode", "help": "Sets the prefix mode for the repo directory (none, underscore, directory).", "default": "underscore"},
+        {"flags": ["--api-prefix"], "dest": "api_prefix", "help": "GitHub Enterprise domain to prefix to API calls.", "default": "https://api.github.com"},
+        {"flags": ["--exclude-repos"], "dest": "exclude_repos", "help": "Comma-separated list of repos to exclude: 'repo1,repo2,...'"},
+        {"flags": ["--exclude-forked"], "dest": "exclude_forked", "help": "Exclude forked repositories.", "action": "store_true"},
+        {"flags": ["--owner-only"], "dest": "owner_only", "help": "Exclude repositories you don't own.", "action": "store_true"},
+    ]
+    # fmt: on
+
+    for arg in arguments:
+        parser.add_argument(*arg.pop("flags"), **arg)
+
     return parser.parse_args()
+
+
+class ConfigError(Exception):
+    """Exception for configuration validation errors."""
+
+    pass
 
 
 @dataclass
@@ -655,78 +587,89 @@ class Config:
         )
 
     def validate(self) -> "Config":
+        """
+        Validates the configuration. Raises ConfigurationError if any validation fails.
+        Returns the validated Config object.
+        """
+        self.validate_threads_limit()
+        self.validate_output_path()
+        self.validate_github_targets()
+        self.validate_threads_limit_type()
+        self.validate_output_directory()
+        self.validate_authentication()
+        self.validate_authenticated_repos_flag()
+        self.validate_prefix_mode()
+        return self
+
+    def validate_threads_limit(self) -> None:
+        """Validates that the thread limit does not exceed 10."""
         if self.threads_limit > 10:
-            print(
-                "Error: Using more than 10 threads may cause errors."
-                "\nDecrease the amount of used threads."
+            raise ConfigError(
+                "Using more than 10 threads may cause errors. "
+                "Decrease the number of threads."
             )
-            print("\nExiting....")
-            exit(1)
 
-        if (not self.output_path) and (not self.echo_urls):
-            print("Error: The output path is not specified.")
-            print("\nExiting...")
-            exit(1)
+    def validate_output_path(self) -> None:
+        """Ensures an output path is specified if URLs are not echoed."""
+        if not self.output_path and not self.echo_urls:
+            raise ConfigError("The output path is not specified.")
 
+    def validate_github_targets(self) -> None:
+        """Validates that at least one of GitHub users or organizations is specified."""
         if not (self.users or self.organizations):
-            print(
-                "Error: Both Github users and Github organizations are not specified."
+            raise ConfigError(
+                "Both GitHub users and GitHub organizations must be specified."
             )
-            print("\nExiting...")
-            exit(1)
 
+    def validate_threads_limit_type(self) -> None:
+        """Ensures the thread limit is a valid digit."""
         if not str(self.threads_limit).isdigit():
-            print("Error: Specified threads specified is invalid.")
-            print("\nExiting...")
-            exit(1)
+            raise ConfigError("Specified threads limit is invalid.")
 
+    def validate_output_directory(self) -> None:
+        """Checks if the output directory exists or creates it if necessary."""
         if not self.echo_urls:
             try:
                 if not os.path.exists(self.output_path):
                     os.mkdir(self.output_path)
             except Exception as error:
-                print("Error: There is an error creating output directory.")
-                print(repr(error))
-                exit(1)
+                raise ConfigError(f"Error creating the output directory: {repr(error)}")
 
+    def validate_authentication(self) -> None:
+        """Validates and processes authentication credentials."""
         if self.authentication is not None:
             if ":" not in self.authentication:
-                print(
-                    "[!] Error: Incorrect authentication value, must be:"
-                    " <username>:<password_or_personal_access_token>"
+                raise ConfigError(
+                    "Incorrect authentication value. Must be: "
+                    "<username>:<password_or_personal_access_token>"
                 )
-                print("\nExiting...")
-                exit(1)
+            username, token = self.authentication.split(":", 1)
             if not GetReposURLs(
                 self.api_prefix, self.exclude_repos
-            ).check_authentication(
-                self.authentication.split(":")[0], self.authentication.split(":")[1]
-            ):
-                print("Error: authentication failed.")
-                print("\nExiting...")
-                exit(1)
-            else:
-                self.username = self.authentication.split(":")[0]
-                self.token = self.authentication.split(":")[1]
+            ).check_authentication(username, token):
+                raise ConfigError("Authentication failed.")
+            self.username = username
+            self.token = token
         else:
             self.username = None
             self.token = None
 
-        if (self.include_authenticated_repos is True) and (self.authentication is None):
-            print(
-                "Error: --include-authenticated-repos is used and --authentication is not provided."
+    def validate_authenticated_repos_flag(self) -> None:
+        """
+        Ensures the --include-authenticated-repos flag is only used
+        if authentication is provided.
+        """
+        if self.include_authenticated_repos and self.authentication is None:
+            raise ConfigError(
+                "--include-authenticated-repos is used but --authentication is not provided."
             )
-            print("\nExiting...")
-            exit(1)
 
+    def validate_prefix_mode(self) -> None:
+        """Validates the prefix mode value."""
         if self.prefix_mode not in ["none", "underscore", "directory"]:
-            print(
-                'Error: prefix_mode must be one of: "none", "underscore", "directory".'
+            raise ConfigError(
+                'prefix_mode must be one of: "none", "underscore", "directory".'
             )
-            print("\nExiting...")
-            exit(1)
-
-        return self
 
 
 class Driver:
@@ -782,7 +725,7 @@ class Driver:
             exclude_forked=self.config.exclude_forked,
         )
 
-    def finish(self, urls: list[str]) -> None:
+    def sync_urls(self, urls: list[str]) -> None:
         urls = list(set(urls))
         if self.config.echo_urls:
             for url in urls:
@@ -831,18 +774,17 @@ class Driver:
 
     def sync(self):
         urls = self.build_urls()
-        self.finish(urls)
+        self.sync_urls(urls)
 
 
 def main():
     """
     The main function.
+    1. parse the arguments and send it as argument to config,
+    2. validate the config send it as argument to driver,
+    3. sync the driver.
     """
-
-    args = parse_args()
-    config = Config.from_args(args).validate()
-    driver = Driver(config)
-    driver.sync()
+    Driver(Config.from_args(parse_args()).validate()).sync()
 
 
 if __name__ == "__main__":
