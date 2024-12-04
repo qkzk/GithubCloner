@@ -1,20 +1,16 @@
 #!/usr/bin/env python3
 
+from dataclasses import dataclass
+
+import argparse
 import json
 import os
 import queue
 import threading
 import time
-import argparse
-
-from dataclasses import dataclass
 
 import git
 import requests
-
-
-import requests
-import json
 
 
 class ConfigError(Exception):
