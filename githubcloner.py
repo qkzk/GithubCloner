@@ -13,513 +13,8 @@ import git
 import requests
 
 
-class GetReposURLs:
-    def __init__(self, api_prefix: str, exclude_repos: str | None = None):
-        self.user_agent = "GithubCloner (https://github.com/mazen160/GithubCloner)"
-        self.headers = {"User-Agent": self.user_agent, "Accept": "*/*"}
-        self.timeout = 30
-        self.api_prefix = api_prefix
-        self.excluded_repos_list = (
-            [] if exclude_repos is None else exclude_repos.strip().split(",")
-        )
-
-    def filter_excluded_repos(self, url: str) -> bool:
-        """
-        True only if the url doesn't contain any string from
-        `self.excluded_repos_list`
-        """
-        return not any(
-            (excluded_repo in url for excluded_repo in self.excluded_repos_list)
-        )
-
-    def append_response(
-        self,
-        URLs: list[str],
-        resp: dict,
-        key: str,
-        exclude_forked: bool = False,
-        owner: str | None = None,
-    ):
-        """Append the urls from response from a given criteria"""
-        for i, _ in enumerate(resp):
-            if exclude_forked and resp[i]["fork"]:
-                continue
-            if owner is not None and resp[i]["owner"]["login"] != owner:
-                continue
-            resp_i_key = resp[i][key]
-            if self.filter_excluded_repos(resp_i_key):
-                URLs.append(resp_i_key)
-
-    def user_gists(
-        self,
-        user: str,
-        username: str | None = None,
-        token: str | None = None,
-        owner_only: bool = False,
-    ):
-        """
-        Returns a list of GIT URLs for accessible gists.
-        Input:-
-        user: Github user.
-        Optional Input:-
-        username: Github username.
-        token: Github token or password.
-        Output:-
-        a list of Github gist repositories URLs.
-        """
-
-        urls = []
-        resp = []
-        current_page = 1
-        while len(resp) != 0 or current_page == 1:
-            API = f"{self.api_prefix}/users/{user}/gists?page={current_page}"
-            if username is None or token is None:
-                resp = requests.get(
-                    API, headers=self.headers, timeout=self.timeout
-                ).text
-            else:
-                resp = requests.get(
-                    API,
-                    headers=self.headers,
-                    timeout=self.timeout,
-                    auth=(username, token),
-                ).text
-            resp = json.loads(resp)
-
-            owner = username if owner_only else None
-
-            if self.check_response(resp) != 0:
-                return []
-
-            self.append_response(urls, resp, "git_pull_url", owner=owner)
-            current_page += 1
-        return urls
-
-    def authenticated_gists(self, username, token, owner_only=False):
-        """
-        Returns a list of gists of an authenticated user.
-        Input:-
-        username: Github username.
-        token: Github token or password.
-        Output:-
-        a list of Github gist repositories URLs.
-        """
-
-        urls = []
-        resp = []
-        current_page = 1
-        while len(resp) != 0 or current_page == 1:
-            API = "{0}/gists?page={1}".format(self.api_prefix, current_page)
-            resp = requests.get(
-                API, headers=self.headers, timeout=self.timeout, auth=(username, token)
-            ).text
-            resp = json.loads(resp)
-            owner = username if owner_only else None
-            self.append_response(urls, resp, "git_pull_url", owner=owner)
-            current_page += 1
-
-        return urls
-
-    def from_user(
-        self,
-        user,
-        username=None,
-        token=None,
-        include_gists=False,
-        exclude_forked=False,
-        owner_only=False,
-    ):
-        """
-        Retrieves a list of repositories for a Github user.
-        Input:-
-        user: Github username.
-        Optional Input:-
-        username: Github username.
-        token: Github token or password.
-        Output:-
-        a list of Github repositories URLs.
-        """
-
-        urls = []
-        resp = []
-        current_page = 1
-        while len(resp) != 0 or current_page == 1:
-            api = f"{self.api_prefix}/users/{user}/repos?per_page=40000000&page={current_page}"
-
-            if username is None or token is None:
-                resp = requests.get(
-                    api, headers=self.headers, timeout=self.timeout
-                ).text
-            else:
-                resp = requests.get(
-                    api,
-                    headers=self.headers,
-                    timeout=self.timeout,
-                    auth=(username, token),
-                ).text
-            resp = json.loads(resp)
-
-            if self.check_response(resp) != 0:
-                return []
-
-            owner = username if owner_only else None
-
-            self.append_response(urls, resp, "git_url", exclude_forked, owner=owner)
-
-            if include_gists is True:
-                urls.extend(self.user_gists(user, username=username, token=token))
-            current_page += 1
-        return urls
-
-    def from_org(
-        self,
-        org_name: str,
-        username: str | None = None,
-        token: str | None = None,
-        exclude_forked: bool = False,
-        owner_only: bool = False,
-    ) -> list[str]:
-        """
-        Retrieves a list of repositories for a Github organization.
-        Input:-
-        org_name: Github organization name.
-        Optional Input:-
-        username: Github username.
-        token: Github token or password.
-        Output:-
-        a list of Github repositories URLs.
-        """
-
-        urls = []
-        resp = []
-        current_page = 1
-        while len(resp) != 0 or current_page == 1:
-            API = "{0}/orgs/{1}/repos?per_page=40000000&page={2}".format(
-                self.api_prefix, org_name, current_page
-            )
-            if username is None or token is None:
-                resp = requests.get(
-                    API, headers=self.headers, timeout=self.timeout
-                ).text
-            else:
-                resp = requests.get(
-                    API,
-                    headers=self.headers,
-                    timeout=self.timeout,
-                    auth=(username, token),
-                ).text
-            resp = json.loads(resp)
-
-            if self.check_response(resp) != 0:
-                return []
-
-            owner = username if owner_only else None
-
-            self.append_response(urls, resp, "git_url", exclude_forked, owner)
-            current_page += 1
-        return urls
-
-    def from_org_include_users(
-        self,
-        org_name: str,
-        username: str | None = None,
-        token: str | None = None,
-        include_gists: bool = False,
-        exclude_forked: bool = False,
-    ) -> list[str]:
-        """
-        Retrieves a list of repositories for a Github organization
-        and repositories of the Github organization's members.
-        Input:-
-        org_name: Github organization name.
-        Optional Input:-
-        username: Github username.
-        token: Github token or password.
-        Output:-
-        a list of Github repositories URLs.
-        """
-
-        members = []
-        resp = []
-        current_page = 1
-        urls = self.from_org(
-            org_name, username=username, token=token, exclude_forked=exclude_forked
-        )
-
-        while len(resp) != 0 or current_page == 1:
-            api = "{0}/orgs/{1}/members?per_page=40000000&page={2}".format(
-                self.api_prefix, org_name, current_page
-            )
-            if username is None or token is None:
-                resp = requests.get(
-                    api, headers=self.headers, timeout=self.timeout
-                ).text
-            else:
-                resp = requests.get(
-                    api,
-                    headers=self.headers,
-                    timeout=self.timeout,
-                    auth=(username, token),
-                ).text
-            resp = json.loads(resp)
-
-            if self.check_response(resp) != 0:
-                return []
-
-            current_page += 1
-            for i in range(len(resp)):
-                members.append(resp[i]["login"])
-
-        for member in members:
-            urls.extend(
-                self.from_user(
-                    member, username=username, token=token, include_gists=include_gists
-                )
-            )
-
-        return urls
-
-    def check_authentication(self, username: str, token: str) -> bool:
-        """
-        Checks whether an authentication credentials are valid or not.
-        Input:-
-        username: Github username.
-        token: Github token or password.
-        Output:-
-        True: if the authentication credentials are valid.
-        False: if the authentication credentials are invalid.
-        """
-
-        api = "{0}/user".format(self.api_prefix)
-        resp = requests.get(
-            api, auth=(username, token), timeout=self.timeout, headers=self.headers
-        )
-        return resp.status_code == 200
-
-    def check_response(self, response: dict) -> int:
-        """
-        Validates whether there an error in the response.
-        """
-        try:
-            if "API rate limit exceeded" in response["message"]:
-                print("[!] Error: Github API rate limit exceeded")
-                return 1
-        except TypeError:
-            pass
-
-        try:
-            if response["message"] == "Not Found":
-                return 2  # The organization does not exist
-        except TypeError:
-            pass
-
-        return 0
-
-    def from_authenticated_user(
-        self,
-        username: str | None,
-        token: str,
-        exclude_forked: bool,
-        owner_only: bool = False,
-    ) -> list[str]:
-        """
-        Retrieves a list of Github repositories than an authenticated user
-        has access to.
-        Input:-
-        username: Github username.
-        token: Github token or password.
-        Output:-
-        a list of Github repositories URLs.
-        """
-        if username is None:
-            raise ValueError("username can't be None")
-        urls = []
-        resp = []
-        current_page = 1
-
-        while len(resp) != 0 or current_page == 1:
-            api = f"{self.api_prefix}/user/repos?per_page=40000000&type=all&page={current_page}"
-            resp = requests.get(
-                api, headers=self.headers, timeout=self.timeout, auth=(username, token)
-            ).text
-            resp = json.loads(resp)
-            owner = username if owner_only else None
-
-            self.append_response(urls, resp, "git_url", exclude_forked, owner=owner)
-            current_page += 1
-        return urls
-
-
-def parse_git_url(url, username: str | None = None, token: str | None = None) -> str:
-    """
-    This function parses the GIT URL.
-    """
-
-    url = url.replace("git://", "https://")
-    if (username or token) is not None:
-        url = url.replace("https://", "https://{0}:{1}@".format(username, token))
-    return url
-
-
-def get_repopath(repo_username: str, repo_name: str, prefix_mode: str):
-    """
-    Returns a string of the repo path.
-    """
-    repopath = ""
-    if prefix_mode == "none":
-        repopath = repo_name
-    elif prefix_mode == "underscore":
-        repopath = repo_username + "_" + repo_name
-    elif prefix_mode == "directory":
-        repopath = repo_username + "/" + repo_name
-    else:
-        raise ValueError("Unknown prefix_mode %s", prefix_mode)
-
-    repopath = repopath.strip(".git")
-    if "@" in repopath:
-        repopath = repopath.replace(repopath[: repopath.index("@") + 1], "")
-    return repopath
-
-
-def create_dirs(cloningpath: str, prefix_mode: str, url: str):
-    try:
-        if not os.path.exists(cloningpath):
-            os.mkdir(cloningpath)
-        if prefix_mode == "directory":
-            repo_username = url.split("/")[-2]
-            if not os.path.exists(cloningpath + "/" + repo_username):
-                os.mkdir(cloningpath + "/" + repo_username)
-    except Exception:
-        print("Error: There is an error in creating directories")
-
-
-def username_name(url: str) -> tuple[str, str]:
-    splits = url.split("/")
-    return (splits[-2], splits[-1])
-
-
-def clone_repo(
-    url,
-    cloningpath: str,
-    username: str | None = None,
-    token: str | None = None,
-    prefix_mode: str = "underscore",
-):
-    """
-    Clones a single GIT repository.
-    Input:-
-    URL: GIT repository URL.
-    cloningPath: the directory that the repository will be cloned at.
-    Optional Input:-
-    username: Github username.
-    token: Github token or password.
-    """
-
-    try:
-        create_dirs(cloningpath, prefix_mode, url)
-        url = parse_git_url(url, username=username, token=token)
-        repo_username, repo_name = username_name(url)
-        repopath = get_repopath(repo_username, repo_name, prefix_mode)
-
-        fullpath = cloningpath + "/" + repopath
-        with threading.Lock():
-            print(fullpath)
-
-        if os.path.exists(fullpath):
-            git.Repo(fullpath).remote().pull()
-        else:
-            git.Repo.clone_from(url, fullpath)
-    except Exception as e:
-        print(e)
-        print(f"Error: There was an error in cloning [{url}]")
-
-
-def build_thread(
-    task: str,
-    cloning_path: str,
-    username: str | None,
-    token: str | None,
-    prefix_mode: str,
-) -> threading.Thread:
-    return threading.Thread(
-        target=clone_repo,
-        args=(task, cloning_path),
-        kwargs={
-            "username": username,
-            "token": token,
-            "prefix_mode": prefix_mode,
-        },
-        daemon=True,
-    )
-
-
-def clone_bulk_repos(
-    urls: list[str],
-    cloning_path: str,
-    threads_limit: int = 5,
-    username: str | None = None,
-    token: str | None = None,
-    prefix_mode: str = "underscore",
-):
-    """
-    Clones a bulk of GIT repositories.
-    Input:-
-    URLs: A list of GIT repository URLs.
-    cloningPath: the directory that the repository will be cloned at.
-    Optional Input:-
-    threads_limit: The limit of working threads.
-    username: Github username.
-    token: Github token or password.
-    """
-
-    q = queue.Queue()
-    for url in urls:
-        q.put(url)
-
-    threads_state: list[threading.Thread] = []
-    while not q.empty():
-        task = q.get()
-        t = build_thread(task, cloning_path, username, token, prefix_mode)
-        if threading.active_count() < threads_limit + 1:
-            t.start()
-            threads_state.append(t)
-        else:
-            time.sleep(0.5)
-
-    for t in threads_state:
-        if t.is_alive:
-            t.join()
-
-
-def parse_args() -> argparse.Namespace:
-    """
-    Parses the user-inputted arguments from stdin and returns a Namespace.
-    """
-    parser = argparse.ArgumentParser()
-
-    # fmt: off
-    arguments = [
-        {"flags": ["-u", "--user"], "dest": "users", "help": "GitHub user (comma-separated for multiple users)."},
-        {"flags": ["-org", "--org"], "dest": "organizations", "help": "GitHub organization (comma-separated for multiple organizations)."},
-        {"flags": ["--include-org-members"], "dest": "include_organization_members", "help": "Include the members of a GitHub organization.", "action": "store_true"},
-        {"flags": ["-o", "--output-path"], "dest": "output_path", "help": "Directory to clone Git repositories."},
-        {"flags": ["-t", "--threads"], "dest": "threads_limit", "help": "Threads used in cloning repositories (Default: 5).", "default": 5},
-        {"flags": ["-a", "--authentication"], "dest": "authentication", "help": "GitHub authentication credentials (username:token)."},
-        {"flags": ["--include-authenticated-repos"], "dest": "include_authenticated_repos", "help": "Include repositories the authenticated GitHub account has access to.", "action": "store_true"},
-        {"flags": ["--include-gists"], "dest": "include_gists", "help": "Include gists.", "action": "store_true"},
-        {"flags": ["--echo-urls"], "dest": "echo_urls", "help": "Print gathered URLs only and then exit.", "action": "store_true"},
-        {"flags": ["--prefix-mode"], "dest": "prefix_mode", "help": "Sets the prefix mode for the repo directory (none, underscore, directory).", "default": "underscore"},
-        {"flags": ["--api-prefix"], "dest": "api_prefix", "help": "GitHub Enterprise domain to prefix to API calls.", "default": "https://api.github.com"},
-        {"flags": ["--exclude-repos"], "dest": "exclude_repos", "help": "Comma-separated list of repos to exclude: 'repo1,repo2,...'"},
-        {"flags": ["--exclude-forked"], "dest": "exclude_forked", "help": "Exclude forked repositories.", "action": "store_true"},
-        {"flags": ["--owner-only"], "dest": "owner_only", "help": "Exclude repositories you don't own.", "action": "store_true"},
-    ]
-    # fmt: on
-
-    for arg in arguments:
-        parser.add_argument(*arg.pop("flags"), **arg)
-
-    return parser.parse_args()
+import requests
+import json
 
 
 class ConfigError(Exception):
@@ -677,8 +172,8 @@ class Driver:
         self.config = config
 
     def authenticated_repos(self) -> list[str]:
-        if self.config.token is None:
-            raise ValueError("token can't be None")
+        if self.config.token is None or self.config.username is None:
+            raise ValueError("token and username can't be None")
 
         return GetReposURLs(
             self.config.api_prefix, self.config.exclude_repos
@@ -688,11 +183,6 @@ class Driver:
             self.config.exclude_forked,
             self.config.owner_only,
         )
-
-    def authenticated_gists(self) -> list[str]:
-        return GetReposURLs(
-            self.config.api_prefix, self.config.exclude_repos
-        ).authenticated_gists(self.config.username, self.config.token)
 
     def authenticated_user(self, user: str) -> list[str]:
         return GetReposURLs(
@@ -725,25 +215,29 @@ class Driver:
             exclude_forked=self.config.exclude_forked,
         )
 
-    def sync_urls(self, urls: list[str]) -> None:
+    def dedup_sort(self, urls: list[str]) -> list[str]:
         urls = list(set(urls))
-        if self.config.echo_urls:
-            for url in urls:
-                print(
-                    parse_git_url(
-                        url, username=self.config.username, token=self.config.token
-                    )
-                )
-            return
+        urls.sort()
+        return urls
 
-        clone_bulk_repos(
+    def print_urls(self, urls: list[str]) -> None:
+        for url in urls:
+            print(
+                parse_git_url(
+                    url, username=self.config.username, token=self.config.token
+                )
+            )
+        return
+
+    def sync_urls(self, urls: list[str]) -> None:
+        Cloner(
             urls,
             self.config.output_path,
             threads_limit=self.config.threads_limit,
             username=self.config.username,
             token=self.config.token,
             prefix_mode=self.config.prefix_mode,
-        )
+        ).clone_bulk_repos()
 
     def build_urls(self) -> list[str]:
         urls = []
@@ -754,8 +248,6 @@ class Driver:
             and self.config.owner_only is not None
         ):
             urls.extend(self.authenticated_repos())
-            if self.config.include_gists:
-                urls.extend(self.authenticated_gists())
 
         if self.config.users is not None and self.config.owner_only is not None:
             users = self.config.users.replace(" ", "").split(",")
@@ -774,7 +266,375 @@ class Driver:
 
     def sync(self):
         urls = self.build_urls()
+        urls = self.dedup_sort(urls)
+        if self.config.echo_urls:
+            self.print_urls(urls)
         self.sync_urls(urls)
+
+
+class GetReposURLs:
+    def __init__(self, api_prefix: str, exclude_repos: str | None = None):
+        """
+        Initialize the class with the API prefix and optional excluded repositories.
+        """
+        self.user_agent = "GithubCloner (https://github.com/mazen160/GithubCloner)"
+        self.headers = {"User-Agent": self.user_agent, "Accept": "*/*"}
+        self.timeout = 30
+        self.api_prefix = api_prefix
+        self.excluded_repos_list = (
+            [] if exclude_repos is None else exclude_repos.strip().split(",")
+        )
+
+    def _filter_excluded_repos(self, url: str) -> bool:
+        """
+        Returns True if the URL does not match any excluded repositories.
+        """
+        return not any(excluded in url for excluded in self.excluded_repos_list)
+
+    def _fetch_paginated_data(
+        self, api_url: str, username: str | None = None, token: str | None = None
+    ) -> list[dict]:
+        """
+        Fetches paginated data from a GitHub API endpoint.
+        """
+        data = []
+        current_page = 1
+
+        while True:
+            url = f"{api_url}&page={current_page}"
+            response = self._make_request(url, username, token)
+            if not response:
+                break
+            data.extend(response)
+            current_page += 1
+
+        return data
+
+    def _make_request(
+        self, url: str, username: str | None = None, token: str | None = None
+    ) -> list[dict]:
+        """
+        Makes an API request and returns the JSON response.
+        """
+        auth = (username, token) if username and token else None
+        response = requests.get(
+            url, headers=self.headers, timeout=self.timeout, auth=auth
+        )
+        return json.loads(response.text)
+
+    def _append_urls(
+        self,
+        urls: list[str],
+        data: list[dict],
+        key: str,
+        exclude_forked: bool = False,
+        owner: str | None = None,
+    ):
+        """
+        Appends URLs to the list based on filtering criteria.
+        """
+        for item in data:
+            if exclude_forked and item.get("fork", False):
+                continue
+            if owner and item.get("owner", {}).get("login") != owner:
+                continue
+            url = item.get(key)
+            if url and self._filter_excluded_repos(url):
+                urls.append(url)
+
+    def _check_response(self, response: dict) -> int:
+        """
+        Validates the API response and checks for errors.
+        """
+        if "message" in response:
+            if "API rate limit exceeded" in response["message"]:
+                print("[!] Error: GitHub API rate limit exceeded")
+                return 1
+            if response["message"] == "Not Found":
+                return 2  # The organization does not exist
+        return 0
+
+    def from_user(
+        self,
+        user: str,
+        username: str | None = None,
+        token: str | None = None,
+        include_gists: bool = False,
+        exclude_forked: bool = False,
+        owner_only: bool = False,
+    ) -> list[str]:
+        """
+        Retrieves repository URLs for a user, optionally including gists.
+        """
+        urls = []
+        api_url = f"{self.api_prefix}/users/{user}/repos?per_page=100"
+        data = self._fetch_paginated_data(api_url, username, token)
+        owner = username if owner_only else None
+
+        self._append_urls(urls, data, "git_url", exclude_forked, owner)
+
+        if include_gists:
+            urls.extend(self.user_gists(user, username, token, owner_only))
+        return urls
+
+    def from_org(
+        self,
+        org_name: str,
+        username: str | None = None,
+        token: str | None = None,
+        exclude_forked: bool = False,
+        owner_only: bool = False,
+    ) -> list[str]:
+        """
+        Retrieves repository URLs for an organization.
+        """
+        urls = []
+        api_url = f"{self.api_prefix}/orgs/{org_name}/repos?per_page=100"
+        data = self._fetch_paginated_data(api_url, username, token)
+        owner = username if owner_only else None
+
+        self._append_urls(urls, data, "git_url", exclude_forked, owner)
+        return urls
+
+    def user_gists(
+        self,
+        user: str,
+        username: str | None = None,
+        token: str | None = None,
+        owner_only: bool = False,
+    ) -> list[str]:
+        """
+        Retrieves gist URLs for a user.
+        """
+        urls = []
+        api_url = f"{self.api_prefix}/users/{user}/gists?per_page=100"
+        data = self._fetch_paginated_data(api_url, username, token)
+        owner = username if owner_only else None
+
+        self._append_urls(urls, data, "git_pull_url", owner=owner)
+        return urls
+
+    def from_authenticated_user(
+        self,
+        username: str,
+        token: str,
+        exclude_forked: bool = False,
+        owner_only: bool = False,
+    ) -> list[str]:
+        """
+        Retrieves repository URLs accessible by an authenticated user.
+        """
+        urls = []
+        api_url = f"{self.api_prefix}/user/repos?per_page=100&type=all"
+        data = self._fetch_paginated_data(api_url, username, token)
+        owner = username if owner_only else None
+
+        self._append_urls(urls, data, "git_url", exclude_forked, owner)
+        return urls
+
+    def from_org_include_users(
+        self,
+        org_name: str,
+        username: str | None = None,
+        token: str | None = None,
+        include_gists: bool = False,
+        exclude_forked: bool = False,
+    ) -> list[str]:
+        """
+        Retrieves repository URLs for an organization and its members.
+        """
+        urls = self.from_org(org_name, username, token, exclude_forked)
+        api_url = f"{self.api_prefix}/orgs/{org_name}/members?per_page=100"
+        members = self._fetch_paginated_data(api_url, username, token)
+
+        for member in members:
+            member_login = member.get("login")
+            if member_login:
+                urls.extend(
+                    self.from_user(
+                        member_login, username, token, include_gists, exclude_forked
+                    )
+                )
+        return urls
+
+    def check_authentication(self, username: str, token: str) -> bool:
+        """
+        Verifies if the provided credentials are valid.
+        """
+        api_url = f"{self.api_prefix}/user"
+        response = requests.get(
+            api_url, auth=(username, token), headers=self.headers, timeout=self.timeout
+        )
+        return response.status_code == 200
+
+
+class Cloner:
+    def __init__(
+        self,
+        urls: list[str],
+        cloning_path: str,
+        threads_limit: int = 5,
+        username: str | None = None,
+        token: str | None = None,
+        prefix_mode: str = "underscore",
+    ):
+        self.urls = urls
+        self.cloning_path = cloning_path
+        self.threads_limit = threads_limit
+        self.username = username
+        self.token = token
+        self.prefix_mode = prefix_mode
+
+    def clone_bulk_repos(self):
+        """
+        Clones a bulk of GIT repositories.
+        Input:-
+        URLs: A list of GIT repository URLs.
+        cloningPath: the directory that the repository will be cloned at.
+        Optional Input:-
+        threads_limit: The limit of working threads.
+        username: Github username.
+        token: Github token or password.
+        """
+
+        q = queue.Queue()
+        for url in self.urls:
+            q.put(url)
+
+        threads_state: list[threading.Thread] = []
+        while not q.empty():
+            task = q.get()
+            t = self.build_thread(
+                task,
+            )
+            if threading.active_count() < self.threads_limit + 1:
+                t.start()
+                threads_state.append(t)
+            else:
+                time.sleep(0.5)
+
+        for t in threads_state:
+            if t.is_alive:
+                t.join()
+
+    def get_repopath(self, repo_username: str, repo_name: str):
+        """
+        Returns a string of the repo path.
+        """
+        repopath = ""
+        if self.prefix_mode == "none":
+            repopath = repo_name
+        elif self.prefix_mode == "underscore":
+            repopath = repo_username + "_" + repo_name
+        elif self.prefix_mode == "directory":
+            repopath = repo_username + "/" + repo_name
+        else:
+            raise ValueError("Unknown prefix_mode %s", self.prefix_mode)
+
+        repopath = repopath.strip(".git")
+        if "@" in repopath:
+            repopath = repopath.replace(repopath[: repopath.index("@") + 1], "")
+        return repopath
+
+    def create_dirs(self, url: str):
+        try:
+            if not os.path.exists(self.cloning_path):
+                os.mkdir(self.cloning_path)
+            if self.prefix_mode == "directory":
+                repo_username = url.split("/")[-2]
+                if not os.path.exists(self.cloning_path + "/" + repo_username):
+                    os.mkdir(self.cloning_path + "/" + repo_username)
+        except Exception:
+            print("Error: There is an error in creating directories")
+
+    @staticmethod
+    def username_name(url: str) -> tuple[str, str]:
+        splits = url.split("/")
+        return (splits[-2], splits[-1])
+
+    def clone_repo(
+        self,
+        url: str = "",
+    ):
+        """
+        Clones a single GIT repository.
+        Input:-
+        URL: GIT repository URL.
+        cloningPath: the directory that the repository will be cloned at.
+        Optional Input:-
+        username: Github username.
+        token: Github token or password.
+        """
+
+        try:
+            self.create_dirs(url)
+            url = parse_git_url(url, username=self.username, token=self.token)
+            repo_username, repo_name = self.username_name(url)
+            repopath = self.get_repopath(repo_username, repo_name)
+
+            fullpath = self.cloning_path + repopath
+            with threading.Lock():
+                print(fullpath)
+
+            if os.path.exists(fullpath):
+                git.Repo(fullpath).remote().pull()
+            else:
+                git.Repo.clone_from(url, fullpath)
+        except Exception as e:
+            print(e)
+            print(f"Error: There was an error in cloning [{url}]")
+
+    def build_thread(
+        self,
+        task: str,
+    ) -> threading.Thread:
+        return threading.Thread(
+            target=self.clone_repo,
+            args=(task,),
+            daemon=True,
+        )
+
+
+def parse_git_url(url, username: str | None = None, token: str | None = None) -> str:
+    """
+    This function parses the GIT URL.
+    """
+
+    url = url.replace("git://", "https://")
+    if (username or token) is not None:
+        url = url.replace("https://", "https://{0}:{1}@".format(username, token))
+    return url
+
+
+def parse_args() -> argparse.Namespace:
+    """
+    Parses the user-inputted arguments from stdin and returns a Namespace.
+    """
+    parser = argparse.ArgumentParser()
+
+    # fmt: off
+    arguments = [
+        {"flags": ["-u", "--user"], "dest": "users", "help": "GitHub user (comma-separated for multiple users)."},
+        {"flags": ["-org", "--org"], "dest": "organizations", "help": "GitHub organization (comma-separated for multiple organizations)."},
+        {"flags": ["--include-org-members"], "dest": "include_organization_members", "help": "Include the members of a GitHub organization.", "action": "store_true"},
+        {"flags": ["-o", "--output-path"], "dest": "output_path", "help": "Directory to clone Git repositories."},
+        {"flags": ["-t", "--threads"], "dest": "threads_limit", "help": "Threads used in cloning repositories (Default: 5).", "default": 5},
+        {"flags": ["-a", "--authentication"], "dest": "authentication", "help": "GitHub authentication credentials (username:token)."},
+        {"flags": ["--include-authenticated-repos"], "dest": "include_authenticated_repos", "help": "Include repositories the authenticated GitHub account has access to.", "action": "store_true"},
+        {"flags": ["--include-gists"], "dest": "include_gists", "help": "Include gists.", "action": "store_true"},
+        {"flags": ["--echo-urls"], "dest": "echo_urls", "help": "Print gathered URLs only and then exit.", "action": "store_true"},
+        {"flags": ["--prefix-mode"], "dest": "prefix_mode", "help": "Sets the prefix mode for the repo directory (none, underscore, directory).", "default": "underscore"},
+        {"flags": ["--api-prefix"], "dest": "api_prefix", "help": "GitHub Enterprise domain to prefix to API calls.", "default": "https://api.github.com"},
+        {"flags": ["--exclude-repos"], "dest": "exclude_repos", "help": "Comma-separated list of repos to exclude: 'repo1,repo2,...'"},
+        {"flags": ["--exclude-forked"], "dest": "exclude_forked", "help": "Exclude forked repositories.", "action": "store_true"},
+        {"flags": ["--owner-only"], "dest": "owner_only", "help": "Exclude repositories you don't own.", "action": "store_true"},
+    ]
+    # fmt: on
+
+    for arg in arguments:
+        parser.add_argument(*arg.pop("flags"), **arg)
+
+    return parser.parse_args()
 
 
 def main():
