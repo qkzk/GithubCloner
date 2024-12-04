@@ -167,7 +167,7 @@ class Driver:
     def __init__(self, config: Config) -> None:
         self.config = config
 
-    def authenticated_repos(self) -> list[str]:
+    def authenticated_repos(self) -> list:
         if self.config.token is None or self.config.username is None:
             raise ValueError("token and username can't be None")
 
@@ -180,7 +180,7 @@ class Driver:
             self.config.owner_only,
         )
 
-    def authenticated_user(self, user: str) -> list[str]:
+    def authenticated_user(self, user: str) -> list:
         return GetReposURLs(
             self.config.api_prefix, self.config.exclude_repos
         ).from_user(
@@ -192,7 +192,7 @@ class Driver:
             owner_only=self.config.owner_only,
         )
 
-    def organization_members(self, organization: str) -> list[str]:
+    def organization_members(self, organization: str) -> list:
         return GetReposURLs(self.config.api_prefix, self.config.exclude_repos).from_org(
             organization,
             username=self.config.username,
@@ -200,7 +200,7 @@ class Driver:
             exclude_forked=self.config.exclude_forked,
         )
 
-    def org_include_users(self, organization: str) -> list[str]:
+    def org_include_users(self, organization: str) -> list:
         return GetReposURLs(
             self.config.api_prefix, self.config.exclude_repos
         ).from_org_include_users(
@@ -211,12 +211,12 @@ class Driver:
             exclude_forked=self.config.exclude_forked,
         )
 
-    def dedup_sort(self, urls: list[str]) -> list[str]:
+    def dedup_sort(self, urls: list) -> list:
         urls = list(set(urls))
         urls.sort()
         return urls
 
-    def print_urls(self, urls: list[str]) -> None:
+    def print_urls(self, urls: list) -> None:
         for url in urls:
             print(
                 parse_git_url(
@@ -225,7 +225,7 @@ class Driver:
             )
         return
 
-    def sync_urls(self, urls: list[str]) -> None:
+    def sync_urls(self, urls: list) -> None:
         Cloner(
             urls,
             self.config.output_path,
@@ -235,7 +235,7 @@ class Driver:
             prefix_mode=self.config.prefix_mode,
         ).clone_bulk_repos()
 
-    def build_urls(self) -> list[str]:
+    def build_urls(self) -> list:
         urls = []
         if (
             self.config.include_authenticated_repos
@@ -320,7 +320,7 @@ class GetReposURLs:
 
     def _append_urls(
         self,
-        urls: list[str],
+        urls: list,
         data: list[dict],
         key: str,
         exclude_forked: bool = False,
@@ -358,7 +358,7 @@ class GetReposURLs:
         include_gists: bool = False,
         exclude_forked: bool = False,
         owner_only: bool = False,
-    ) -> list[str]:
+    ) -> list:
         """
         Retrieves repository URLs for a user, optionally including gists.
         """
@@ -380,7 +380,7 @@ class GetReposURLs:
         token: str = None,
         exclude_forked: bool = False,
         owner_only: bool = False,
-    ) -> list[str]:
+    ) -> list:
         """
         Retrieves repository URLs for an organization.
         """
@@ -398,7 +398,7 @@ class GetReposURLs:
         username: str = None,
         token: str = None,
         owner_only: bool = False,
-    ) -> list[str]:
+    ) -> list:
         """
         Retrieves gist URLs for a user.
         """
@@ -416,7 +416,7 @@ class GetReposURLs:
         token: str,
         exclude_forked: bool = False,
         owner_only: bool = False,
-    ) -> list[str]:
+    ) -> list:
         """
         Retrieves repository URLs accessible by an authenticated user.
         """
@@ -435,7 +435,7 @@ class GetReposURLs:
         token: str = None,
         include_gists: bool = False,
         exclude_forked: bool = False,
-    ) -> list[str]:
+    ) -> list:
         """
         Retrieves repository URLs for an organization and its members.
         """
@@ -467,7 +467,7 @@ class GetReposURLs:
 class Cloner:
     def __init__(
         self,
-        urls: list[str],
+        urls: list,
         cloning_path: str,
         threads_limit: int = 5,
         username: str = None,
