@@ -566,7 +566,7 @@ class Cloner:
             repo_username, repo_name = self.username_name(url)
             repopath = self.get_repopath(repo_username, repo_name)
 
-            fullpath = self.cloning_path + repopath
+            fullpath = self.cloning_path + "/" + repopath
             with threading.Lock():
                 print(fullpath)
 
