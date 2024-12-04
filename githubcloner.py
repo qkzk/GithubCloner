@@ -317,7 +317,11 @@ class GetReposURLs:
         return 0
 
     def from_authenticated_user(
-        self, username: str, token: str, exclude_forked: bool, owner_only: bool = False
+        self,
+        username: str | None,
+        token: str,
+        exclude_forked: bool,
+        owner_only: bool = False,
     ) -> list[str]:
         """
         Retrieves a list of Github repositories than an authenticated user
@@ -328,6 +332,8 @@ class GetReposURLs:
         Output:-
         a list of Github repositories URLs.
         """
+        if username is None:
+            raise ValueError("username can't be None")
         urls = []
         resp = []
         current_page = 1
@@ -369,7 +375,28 @@ def get_repopath(repo_username: str, repo_name: str, prefix_mode: str):
         repopath = repo_username + "/" + repo_name
     else:
         raise ValueError("Unknown prefix_mode %s", prefix_mode)
+
+    repopath = repopath.strip(".git")
+    if "@" in repopath:
+        repopath = repopath.replace(repopath[: repopath.index("@") + 1], "")
     return repopath
+
+
+def create_dirs(cloningpath: str, prefix_mode: str, url: str):
+    try:
+        if not os.path.exists(cloningpath):
+            os.mkdir(cloningpath)
+        if prefix_mode == "directory":
+            repo_username = url.split("/")[-2]
+            if not os.path.exists(cloningpath + "/" + repo_username):
+                os.mkdir(cloningpath + "/" + repo_username)
+    except Exception:
+        print("Error: There is an error in creating directories")
+
+
+def username_name(url: str) -> tuple[str, str]:
+    splits = url.split("/")
+    return (splits[-2], splits[-1])
 
 
 def clone_repo(
@@ -390,28 +417,10 @@ def clone_repo(
     """
 
     try:
-        try:
-            if not os.path.exists(cloningpath):
-                os.mkdir(cloningpath)
-            if prefix_mode == "directory":
-                repo_username = url.split("/")[-2]
-                if not os.path.exists(cloningpath + "/" + repo_username):
-                    os.mkdir(cloningpath + "/" + repo_username)
-        except Exception:
-            print("Error: There is an error in creating directories")
-
+        create_dirs(cloningpath, prefix_mode, url)
         url = parse_git_url(url, username=username, token=token)
-
-        repo_username = url.split("/")[-2]
-        repo_name = url.split("/")[-1]
-
+        repo_username, repo_name = username_name(url)
         repopath = get_repopath(repo_username, repo_name, prefix_mode)
-
-        if repopath.endswith(".git"):
-            repopath = repopath[:-4]
-
-        if "@" in repopath:
-            repopath = repopath.replace(repopath[: repopath.index("@") + 1], "")
 
         fullpath = cloningpath + "/" + repopath
         with threading.Lock():
@@ -423,7 +432,26 @@ def clone_repo(
             git.Repo.clone_from(url, fullpath)
     except Exception as e:
         print(e)
-        print("Error: There was an error in cloning [{}]".format(url))
+        print(f"Error: There was an error in cloning [{url}]")
+
+
+def build_thread(
+    task: str,
+    cloning_path: str,
+    username: str | None,
+    token: str | None,
+    prefix_mode: str,
+) -> threading.Thread:
+    return threading.Thread(
+        target=clone_repo,
+        args=(task, cloning_path),
+        kwargs={
+            "username": username,
+            "token": token,
+            "prefix_mode": prefix_mode,
+        },
+        daemon=True,
+    )
 
 
 def clone_bulk_repos(
@@ -446,23 +474,13 @@ def clone_bulk_repos(
     """
 
     q = queue.Queue()
-    threads_state: list[threading.Thread] = []
     for url in urls:
         q.put(url)
+
+    threads_state: list[threading.Thread] = []
     while not q.empty():
-        t = threading.Thread(
-            target=clone_repo,
-            args=(
-                q.get(),
-                cloning_path,
-            ),
-            kwargs={
-                "username": username,
-                "token": token,
-                "prefix_mode": prefix_mode,
-            },
-        )
-        t.daemon = True
+        task = q.get()
+        t = build_thread(task, cloning_path, username, token, prefix_mode)
         if threading.active_count() < threads_limit + 1:
             t.start()
             threads_state.append(t)
@@ -592,7 +610,8 @@ class Config:
     prefix_mode: str
     api_prefix: str
     exclude_repos: str | None
-    owner_only: bool | None
+    owner_only: bool
+    exclude_forked: bool
 
     @classmethod
     def from_args(cls, args: argparse.Namespace) -> "Config":
@@ -616,7 +635,8 @@ class Config:
         prefix_mode = args.prefix_mode
         api_prefix = args.api_prefix
         exclude_repos = args.exclude_repos if args.exclude_repos else None
-        owner_only = args.owner_only if args.owner_only else None
+        owner_only = args.owner_only if args.owner_only else False
+        exclude_forked = args.exclude_forked if args.exclude_forked else False
         return cls(
             users,
             organizations,
@@ -631,6 +651,7 @@ class Config:
             api_prefix,
             exclude_repos,
             owner_only,
+            exclude_forked,
         )
 
     def validate(self) -> "Config":
@@ -708,6 +729,111 @@ class Config:
         return self
 
 
+class Driver:
+    def __init__(self, config: Config) -> None:
+        self.config = config
+
+    def authenticated_repos(self) -> list[str]:
+        if self.config.token is None:
+            raise ValueError("token can't be None")
+
+        return GetReposURLs(
+            self.config.api_prefix, self.config.exclude_repos
+        ).from_authenticated_user(
+            self.config.username,
+            self.config.token,
+            self.config.exclude_forked,
+            self.config.owner_only,
+        )
+
+    def authenticated_gists(self) -> list[str]:
+        return GetReposURLs(
+            self.config.api_prefix, self.config.exclude_repos
+        ).authenticated_gists(self.config.username, self.config.token)
+
+    def authenticated_user(self, user: str) -> list[str]:
+        return GetReposURLs(
+            self.config.api_prefix, self.config.exclude_repos
+        ).from_user(
+            user,
+            username=self.config.username,
+            token=self.config.token,
+            include_gists=self.config.include_gists,
+            exclude_forked=self.config.exclude_forked,
+            owner_only=self.config.owner_only,
+        )
+
+    def organization_members(self, organization: str) -> list[str]:
+        return GetReposURLs(self.config.api_prefix, self.config.exclude_repos).from_org(
+            organization,
+            username=self.config.username,
+            token=self.config.token,
+            exclude_forked=self.config.exclude_forked,
+        )
+
+    def org_include_users(self, organization: str) -> list[str]:
+        return GetReposURLs(
+            self.config.api_prefix, self.config.exclude_repos
+        ).from_org_include_users(
+            organization,
+            username=self.config.username,
+            token=self.config.token,
+            include_gists=self.config.include_gists,
+            exclude_forked=self.config.exclude_forked,
+        )
+
+    def finish(self, urls: list[str]) -> None:
+        urls = list(set(urls))
+        if self.config.echo_urls:
+            for url in urls:
+                print(
+                    parse_git_url(
+                        url, username=self.config.username, token=self.config.token
+                    )
+                )
+            return
+
+        clone_bulk_repos(
+            urls,
+            self.config.output_path,
+            threads_limit=self.config.threads_limit,
+            username=self.config.username,
+            token=self.config.token,
+            prefix_mode=self.config.prefix_mode,
+        )
+
+    def build_urls(self) -> list[str]:
+        urls = []
+        if (
+            self.config.include_authenticated_repos
+            and self.config.username is not None
+            and self.config.token is not None
+            and self.config.owner_only is not None
+        ):
+            urls.extend(self.authenticated_repos())
+            if self.config.include_gists:
+                urls.extend(self.authenticated_gists())
+
+        if self.config.users is not None and self.config.owner_only is not None:
+            users = self.config.users.replace(" ", "").split(",")
+            for user in users:
+                urls.extend(self.authenticated_user(user))
+
+        if self.config.organizations is not None:
+            organizations = self.config.organizations.replace(" ", "").split(",")
+
+            for organization in organizations:
+                if self.config.include_organization_members is False:
+                    urls.extend(self.organization_members(organization))
+                else:
+                    urls.extend(self.org_include_users(organization))
+        return urls
+
+    def sync(self):
+        urls = self.build_urls()
+        self.finish(urls)
+
+
 def main():
     """
     The main function.
@@ -715,83 +841,8 @@ def main():
 
     args = parse_args()
     config = Config.from_args(args).validate()
-
-    urls = []
-
-    if (
-        config.include_authenticated_repos
-        and config.username is not None
-        and config.token is not None
-        and config.owner_only is not None
-    ):
-        urls.extend(
-            GetReposURLs(
-                config.api_prefix, config.exclude_repos
-            ).from_authenticated_user(
-                config.username, config.token, args.exclude_forked, config.owner_only
-            )
-        )
-        if config.include_gists:
-            urls.extend(
-                GetReposURLs(
-                    config.api_prefix, config.exclude_repos
-                ).authenticated_gists(config.username, config.token)
-            )
-
-    if config.users is not None and config.owner_only is not None:
-        users = config.users.replace(" ", "").split(",")
-        for user in users:
-            urls.extend(
-                GetReposURLs(config.api_prefix, config.exclude_repos).from_user(
-                    user,
-                    username=config.username,
-                    token=config.token,
-                    include_gists=config.include_gists,
-                    exclude_forked=args.exclude_forked,
-                    owner_only=config.owner_only,
-                )
-            )
-
-    if config.organizations is not None:
-        organizations = config.organizations.replace(" ", "").split(",")
-
-        for organization in organizations:
-            if config.include_organization_members is False:
-                urls.extend(
-                    GetReposURLs(config.api_prefix, config.exclude_repos).from_org(
-                        organization,
-                        username=config.username,
-                        token=config.token,
-                        exclude_forked=args.exclude_forked,
-                    )
-                )
-            else:
-                urls.extend(
-                    GetReposURLs(
-                        config.api_prefix, config.exclude_repos
-                    ).from_org_include_users(
-                        organization,
-                        username=config.username,
-                        token=config.token,
-                        include_gists=config.include_gists,
-                        exclude_forked=args.exclude_forked,
-                    )
-                )
-
-    urls = list(set(urls))
-    if config.echo_urls is True:
-        for URL in urls:
-            print(parse_git_url(URL, username=config.username, token=config.token))
-        return
-
-    clone_bulk_repos(
-        urls,
-        config.output_path,
-        threads_limit=config.threads_limit,
-        username=config.username,
-        token=config.token,
-        prefix_mode=config.prefix_mode,
-    )
+    driver = Driver(config)
+    driver.sync()
 
 
 if __name__ == "__main__":
