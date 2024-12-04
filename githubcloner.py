@@ -289,7 +289,7 @@ class GetReposURLs:
 
     def _fetch_paginated_data(
         self, api_url: str, username: str = None, token: str = None
-    ) -> list[dict]:
+    ) -> list:
         """
         Fetches paginated data from a GitHub API endpoint.
         """
@@ -306,9 +306,7 @@ class GetReposURLs:
 
         return data
 
-    def _make_request(
-        self, url: str, username: str = None, token: str = None
-    ) -> list[dict]:
+    def _make_request(self, url: str, username: str = None, token: str = None) -> list:
         """
         Makes an API request and returns the JSON response.
         """
@@ -321,7 +319,7 @@ class GetReposURLs:
     def _append_urls(
         self,
         urls: list,
-        data: list[dict],
+        data: list,
         key: str,
         exclude_forked: bool = False,
         owner: str = None,
@@ -544,7 +542,7 @@ class Cloner:
             print("Error: There is an error in creating directories")
 
     @staticmethod
-    def username_name(url: str) -> tuple[str, str]:
+    def username_name(url: str) -> tuple:
         splits = url.split("/")
         return (splits[-2], splits[-1])
 
